@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SENTINEL AI - TACTICAL FEED</title>
+    <style>
+        :root {
+            --bg-color: #050a0f;
+            --grid-color: #0a192f;
+            --accent-cyan: #00f3ff;
+            --accent-red: #ff003c;
+            --text-main: #64ffda;
+        }
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 20px;
+            background-image: 
+                linear-gradient(var(--grid-color) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+            background-size: 30px 30px;
+        }
+        .header {
+            border-bottom: 2px solid var(--accent-cyan);
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+        .header h1 { margin: 0; font-size: 24px; letter-spacing: 2px; }
+        .blinking-dot {
+            height: 10px; width: 10px;
+            background-color: var(--accent-red);
+            border-radius: 50%;
+            display: inline-block;
+            animation: blink 1s infinite;
+        }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
+        
+        .dashboard { display: flex; gap: 20px; }
+        .main-feed { flex: 2; border: 1px solid var(--accent-cyan); position: relative; padding: 10px; background: rgba(0,0,0,0.5); }
+        .side-panel { flex: 1; display: flex; flex-direction: column; gap: 20px; }
+        
+        .panel { border: 1px solid var(--text-main); padding: 15px; background: rgba(10, 25, 47, 0.7); }
+        .panel h3 { margin-top: 0; color: var(--accent-red); border-bottom: 1px solid var(--accent-red); padding-bottom: 5px; }
+        
+        canvas { max-width: 100%; height: auto; border: 1px dashed #444; }
+        
+        input[type="file"] { display: none; }
+        .upload-btn {
+            background: transparent; color: var(--accent-cyan);
+            border: 1px solid var(--accent-cyan); padding: 10px 20px;
+            cursor: pointer; font-family: inherit; font-weight: bold; width: 100%; transition: 0.3s;
+        }
+        .upload-btn:hover { background: var(--accent-cyan); color: #000; }
+        
+        .log-entry { font-size: 12px; margin-bottom: 5px; border-left: 2px solid var(--accent-red); padding-left: 5px;}
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>[SENTINEL AI] // TACTICAL COMMAND NODE</h1>
+        <div>SYSTEM STATUS: <span style="color: var(--accent-cyan);">ONLINE</span> <span class="blinking-dot"></span></div>
+    </div>
+
+    <div class="dashboard">
+        <div class="main-feed">
+            <div style="margin-bottom: 10px;">OPTICAL SENSOR FEED (UPLINK ACTIVE)</div>
+            <canvas id="visionCanvas"></canvas>
+        </div>
+
+        <div class="side-panel">
+            <div class="panel">
+                <h3>// INITIATE SCAN</h3>
+                <label class="upload-btn">
+                    UPLOAD TARGET INTEL
+                    <input type="file" id="imageInput" accept="image/*">
+                </label>
+            </div>
+
+            <div class="panel">
+                <h3>// THREAT TELEMETRY</h3>
+                <div id="telemetryLogs">Waiting for input...</div>
+            </div>
+            
+            <div class="panel">
+                <h3>// SYSTEM LATENCY</h3>
+                <div id="latencyLogs">FRCNN: N/A<br>RETINANET: N/A</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const imageInput = document.getElementById('imageInput');
+        const canvas = document.getElementById('visionCanvas');
+        const ctx = canvas.getContext('2d');
+        const telemetryLogs = document.getElementById('telemetryLogs');
+        const latencyLogs = document.getElementById('latencyLogs');
+
+        imageInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // 1. Draw uploaded image to canvas immediately
+            const img = new Image();
+            img.src = URL.createObjectURL(file);
+            img.onload = () => {
+                canvas.width = img.width;
+                canvas.height = img.height;
+                ctx.drawImage(img, 0, 0);
+            };
+
+            telemetryLogs.innerHTML = "<span style='color: var(--text-main)'>Analyzing visual data... stand by.</span>";
+
+            // 2. Send to FastAPI Backend
+            const formData = new FormData();
+            formData.append("file", file);
+
+            try {
+                const response = await fetch("http://localhost:8000/scan", {
+                    method: "POST",
+                    body: formData
+                });
+                const data = await response.json();
+                
+                // 3. Process Results
+                const fasterRcnn = data.report.faster_rcnn;
+                const retinaNet = data.report.retinanet;
+
+                // Update Latency
+                latencyLogs.innerHTML = `
+                    <span style="color: var(--accent-cyan)">FRCNN:</span> ${fasterRcnn.inference_time_ms} ms<br>
+                    <span style="color: var(--accent-red)">RETINANET:</span> ${retinaNet.inference_time_ms} ms
+                `;
+
+                // Draw Boxes and Update Logs
+                telemetryLogs.innerHTML = "";
+                
+                // We'll draw Faster R-CNN boxes for this example
+                fasterRcnn.detections.forEach(det => {
+                    const [x1, y1, x2, y2] = det.box;
+                    const width = x2 - x1;
+                    const height = y2 - y1;
+
+                    // Draw tactical box
+                    ctx.strokeStyle = '#ff003c';
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(x1, y1, width, height);
+
+                    // Draw label background
+                    ctx.fillStyle = 'rgba(255, 0, 60, 0.7)';
+                    ctx.fillRect(x1, y1 - 20, ctx.measureText(det.class).width + 60, 20);
+
+                    // Draw label text
+                    ctx.fillStyle = '#fff';
+                    ctx.font = '16px Courier New';
+                    ctx.fillText(`[${det.class.toUpperCase()}] ${det.confidence}%`, x1 + 5, y1 - 5);
+
+                    // Add to telemetry panel
+                    telemetryLogs.innerHTML += `<div class="log-entry">TARGET ACQUIRED: ${det.class.toUpperCase()} (CONF: ${det.confidence}%)</div>`;
+                });
+
+                if(fasterRcnn.detections.length === 0) {
+                    telemetryLogs.innerHTML = "<span style='color: #888'>CLEAR: No security targets identified.</span>";
+                }
+
+            } catch (error) {
+                telemetryLogs.innerHTML = `<span style="color: red;">UPLINK FAILED: ${error.message}</span>`;
+            }
+        });
+    </script>
+</body>
+</html>
